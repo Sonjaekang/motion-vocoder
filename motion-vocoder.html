@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Motion Vocoder</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    color: #e0e0f0;
+    font-family: 'Courier New', monospace;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  #header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    border-bottom: 1px solid #1a1a3a;
+    background: #06060e;
+    flex-shrink: 0;
+  }
+  #title { font-size: 13px; letter-spacing: 3px; color: #7a7aff; text-transform: uppercase; }
+  #status { font-size: 11px; color: #444466; letter-spacing: 1px; }
+  #status.active { color: #44ff88; }
+  #main { display: flex; flex: 1; min-height: 0; }
+  #cam-section {
+    position: relative; width: 320px; flex-shrink: 0;
+    background: #050508; border-right: 1px solid #1a1a3a;
+    display: flex; flex-direction: column;
+  }
+  #video-wrap { position: relative; flex: 1; overflow: hidden; min-height: 0; }
+  video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); display: block; }
+  #overlay-canvas {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    transform: scaleX(-1); pointer-events: none;
+  }
+  #motion-bar { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: #1a1a3a; border-top: 1px solid #1a1a3a; flex-shrink: 0; }
+  .motion-cell { background: #06060e; padding: 8px 12px; }
+  .motion-label { font-size: 9px; letter-spacing: 2px; color: #333366; text-transform: uppercase; margin-bottom: 4px; }
+  .motion-val { font-size: 14px; font-weight: bold; color: #5555ff; font-variant-numeric: tabular-nums; }
+  .motion-val.hi { color: #ff5599; }
+  #right-section { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #viz-canvas { flex: 1; width: 100%; display: block; background: #08080e; min-height: 0; }
+  #controls {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 1px; background: #1a1a3a; border-top: 1px solid #1a1a3a; flex-shrink: 0;
+  }
+  .ctrl-block { background: #06060e; padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; }
+  .ctrl-label { font-size: 9px; letter-spacing: 2px; color: #333366; text-transform: uppercase; display: flex; justify-content: space-between; }
+  .ctrl-label span { color: #6666cc; }
+  .ctrl-source { font-size: 9px; color: #222244; letter-spacing: 1px; }
+  .bar-track { height: 3px; background: #111122; border-radius: 2px; overflow: hidden; }
+  .bar-fill { height: 100%; background: linear-gradient(90deg, #3333ff, #aa33ff); border-radius: 2px; transition: width 0.05s; width: 50%; }
+  #start-btn {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 12px;
+    background: rgba(6,6,14,0.9); cursor: pointer; z-index: 10; transition: opacity 0.3s;
+  }
+  #start-btn .big-btn {
+    padding: 12px 28px; background: #1a1aff; color: #fff;
+    font-family: 'Courier New', monospace; font-size: 11px; letter-spacing: 3px;
+    text-transform: uppercase; border: none; cursor: pointer; border-radius: 2px;
+  }
+  #start-btn .big-btn:hover { background: #3333ff; }
+  #start-btn p { font-size: 10px; color: #333366; letter-spacing: 1px; }
+  #effect-label {
+    position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+    font-size: 9px; letter-spacing: 3px; color: #3333aa; text-transform: uppercase;
+    pointer-events: none; white-space: nowrap;
+  }
+  .seg { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #1a1a5a; margin: 0 2px; transition: background 0.1s; }
+  .seg.on { background: #44ff88; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div id="title">Motion Vocoder</div>
+  <div id="status">● STANDBY</div>
+</div>
+
+<div id="main">
+  <div id="cam-section">
+    <div id="video-wrap">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="overlay-canvas"></canvas>
+      <div id="start-btn">
+        <p>카메라 + 마이크 권한 필요</p>
+        <button class="big-btn" onclick="initAll()">ACTIVATE</button>
+        <p>얼굴 움직임 → 오디오 이펙트</p>
+      </div>
+      <div id="effect-label">PITCH &nbsp;·&nbsp; REVERB &nbsp;·&nbsp; DISTORTION &nbsp;·&nbsp; FILTER</div>
+    </div>
+    <div id="motion-bar">
+      <div class="motion-cell"><div class="motion-label">HEAD X</div><div class="motion-val" id="val-x">–</div></div>
+      <div class="motion-cell"><div class="motion-label">HEAD Y</div><div class="motion-val" id="val-y">–</div></div>
+      <div class="motion-cell"><div class="motion-label">TILT</div><div class="motion-val" id="val-tilt">–</div></div>
+      <div class="motion-cell">
+        <div class="motion-label">SIGNAL</div>
+        <div class="motion-val" id="val-sig">
+          <span class="seg" id="s0"></span><span class="seg" id="s1"></span>
+          <span class="seg" id="s2"></span><span class="seg" id="s3"></span><span class="seg" id="s4"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="right-section">
+    <canvas id="viz-canvas"></canvas>
+    <div id="controls">
+      <div class="ctrl-block">
+        <div class="ctrl-label">PITCH <span id="pitch-val">0</span></div>
+        <div class="ctrl-source">← HEAD X</div>
+        <div class="bar-track"><div class="bar-fill" id="pitch-bar"></div></div>
+      </div>
+      <div class="ctrl-block">
+        <div class="ctrl-label">REVERB <span id="reverb-val">0</span></div>
+        <div class="ctrl-source">↕ HEAD Y</div>
+        <div class="bar-track"><div class="bar-fill" id="reverb-bar"></div></div>
+      </div>
+      <div class="ctrl-block">
+        <div class="ctrl-label">DISTORT <span id="dist-val">0</span></div>
+        <div class="ctrl-source">↺ TILT</div>
+        <div class="bar-track"><div class="bar-fill" id="dist-bar"></div></div>
+      </div>
+      <div class="ctrl-block">
+        <div class="ctrl-label">FILTER <span id="filter-val">800</span>Hz</div>
+        <div class="ctrl-source">● VOLUME</div>
+        <div class="bar-track"><div class="bar-fill" id="filter-bar"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let audioCtx, source, analyser, gainNode, distortionNode, filterNode, convolver;
+let stream, faceTilt = 0;
+let smoothX = 0.5, smoothY = 0.5, smoothTilt = 0, faceConf = 0;
+let particles = [];
+let volume = 0;
+
+const video = document.getElementById('video');
+const overlayCanvas = document.getElementById('overlay-canvas');
+const overlayCtx = overlayCanvas.getContext('2d');
+const vizCanvas = document.getElementById('viz-canvas');
+const vizCtx = vizCanvas.getContext('2d');
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+async function initAll() {
+  document.getElementById('start-btn').style.opacity = '0';
+  document.getElementById('start-btn').style.pointerEvents = 'none';
+  document.getElementById('status').textContent = '● INIT...';
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    video.srcObject = stream;
+
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const micStream = new MediaStream(stream.getAudioTracks());
+    source = audioCtx.createMediaStreamSource(micStream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+
+    distortionNode = audioCtx.createWaveShaper();
+    distortionNode.oversample = '4x';
+
+    filterNode = audioCtx.createBiquadFilter();
+    filterNode.type = 'bandpass';
+    filterNode.frequency.value = 800;
+    filterNode.Q.value = 1.5;
+
+    gainNode = audioCtx.createGain();
+    gainNode.gain.value = 1;
+
+    convolver = audioCtx.createConvolver();
+    makeReverb(0.3);
+
+    const dryGain = audioCtx.createGain(); dryGain.gain.value = 0.7;
+    const wetGain = audioCtx.createGain(); wetGain.gain.value = 0.3;
+
+    source.connect(filterNode);
+    filterNode.connect(distortionNode);
+    distortionNode.connect(dryGain);
+    distortionNode.connect(convolver);
+    convolver.connect(wetGain);
+    dryGain.connect(gainNode);
+    wetGain.connect(gainNode);
+    gainNode.connect(analyser);
+    gainNode.connect(audioCtx.destination);
+
+    document.getElementById('status').textContent = '● ACTIVE';
+    document.getElementById('status').className = 'active';
+
+    startFaceTracking();
+    resizeCanvases();
+    drawViz();
+  } catch(e) {
+    document.getElementById('start-btn').style.opacity = '1';
+    document.getElementById('start-btn').style.pointerEvents = 'auto';
+    document.getElementById('status').textContent = '● ERROR: ' + e.message;
+  }
+}
+
+function makeReverb(amount) {
+  if (!audioCtx) return;
+  const len = audioCtx.sampleRate * (0.5 + amount * 4);
+  const buf = audioCtx.createBuffer(2, len, audioCtx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2);
+  }
+  convolver.buffer = buf;
+}
+
+function makeDistortion(amount) {
+  const n = 256, curve = new Float32Array(n);
+  const k = amount * 200;
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2) / n - 1;
+    curve[i] = k ? ((Math.PI + k) * x) / (Math.PI + k * Math.abs(x)) : x;
+  }
+  distortionNode.curve = curve;
+}
+
+function startFaceTracking() {
+  const trackCanvas = document.createElement('canvas');
+  trackCanvas.width = 160; trackCanvas.height = 120;
+  const tc = trackCanvas.getContext('2d');
+  let prevCx = 80;
+
+  function track() {
+    requestAnimationFrame(track);
+    tc.drawImage(video, 0, 0, 160, 120);
+    const imageData = tc.getImageData(0, 0, 160, 120);
+    const data = imageData.data;
+    let skinX = 0, skinY = 0, skinCount = 0;
+
+    for (let y = 10; y < 110; y += 2) {
+      for (let x = 10; x < 150; x += 2) {
+        const idx = (y * 160 + x) * 4;
+        const r = data[idx], g = data[idx+1], b = data[idx+2];
+        if (r > 95 && g > 40 && b > 20 && r > g && r > b && Math.abs(r-g) > 15 && r-b > 10 && r < 240) {
+          skinX += x; skinY += y; skinCount++;
+        }
+      }
+    }
+
+    if (skinCount > 50) {
+      const cx = skinX / skinCount, cy = skinY / skinCount;
+      const rawX = 1 - cx / 160, rawY = cy / 120;
+      const tilt = (cx - prevCx) * 0.1;
+      prevCx = lerp(prevCx, cx, 0.3);
+      smoothX = lerp(smoothX, rawX, 0.08);
+      smoothY = lerp(smoothY, rawY, 0.08);
+      smoothTilt = lerp(smoothTilt, tilt, 0.1);
+      faceConf = Math.min(1, skinCount / 300);
+      drawOverlay(cx, cy);
+      applyEffects();
+      updateUI();
+    } else {
+      faceConf = lerp(faceConf, 0, 0.05);
+    }
+  }
+  track();
+}
+
+function drawOverlay(cx, cy) {
+  const w = overlayCanvas.width, h = overlayCanvas.height;
+  const sx = (160 - cx) * (w / 160), sy = cy * (h / 120);
+  overlayCtx.clearRect(0, 0, w, h);
+  const alpha = Math.min(0.9, faceConf);
+  overlayCtx.strokeStyle = `rgba(100,100,255,${alpha})`;
+  overlayCtx.lineWidth = 1;
+  overlayCtx.setLineDash([4,4]);
+  overlayCtx.strokeRect(sx-50, sy-70, 100, 110);
+  overlayCtx.setLineDash([]);
+  overlayCtx.strokeStyle = `rgba(80,80,255,${alpha*0.5})`;
+  overlayCtx.lineWidth = 0.5;
+  overlayCtx.beginPath();
+  overlayCtx.moveTo(sx,0); overlayCtx.lineTo(sx,h);
+  overlayCtx.moveTo(0,sy); overlayCtx.lineTo(w,sy);
+  overlayCtx.stroke();
+  overlayCtx.fillStyle = `rgba(100,100,255,${alpha})`;
+  overlayCtx.beginPath(); overlayCtx.arc(sx, sy, 3, 0, Math.PI*2); overlayCtx.fill();
+  overlayCtx.fillStyle = `rgba(80,80,200,${alpha*0.7})`;
+  overlayCtx.font = '9px Courier New';
+  overlayCtx.fillText(`TRACK ${Math.round(faceConf*100)}%`, sx+8, sy-8);
+}
+
+function applyEffects() {
+  if (!audioCtx) return;
+  filterNode.frequency.setTargetAtTime(200 + smoothX * 3800, audioCtx.currentTime, 0.05);
+  makeReverb(smoothY * 0.8);
+  makeDistortion(Math.min(1, Math.abs(smoothTilt) * 0.5));
+  gainNode.gain.setTargetAtTime(0.9 + Math.abs(smoothTilt)*0.3, audioCtx.currentTime, 0.1);
+}
+
+function updateUI() {
+  document.getElementById('val-x').textContent = smoothX.toFixed(2);
+  document.getElementById('val-x').className = 'motion-val' + (smoothX > 0.6 || smoothX < 0.4 ? ' hi' : '');
+  document.getElementById('val-y').textContent = smoothY.toFixed(2);
+  document.getElementById('val-y').className = 'motion-val' + (smoothY > 0.6 ? ' hi' : '');
+  document.getElementById('val-tilt').textContent = smoothTilt.toFixed(3);
+  document.getElementById('val-tilt').className = 'motion-val' + (Math.abs(smoothTilt) > 0.05 ? ' hi' : '');
+
+  const pv = Math.round(smoothX * 100);
+  document.getElementById('pitch-val').textContent = pv;
+  document.getElementById('pitch-bar').style.width = pv + '%';
+  const rv = Math.round(smoothY * 100);
+  document.getElementById('reverb-val').textContent = rv;
+  document.getElementById('reverb-bar').style.width = rv + '%';
+  const dv = Math.round(Math.abs(smoothTilt) * 50);
+  document.getElementById('dist-val').textContent = dv;
+  document.getElementById('dist-bar').style.width = Math.min(100, dv*5) + '%';
+  const fv = Math.round(200 + smoothX * 3800);
+  document.getElementById('filter-val').textContent = fv;
+  document.getElementById('filter-bar').style.width = Math.round(smoothX * 100) + '%';
+
+  for (let i = 0; i < 5; i++)
+    document.getElementById('s'+i).className = 'seg' + (i < Math.round(faceConf*5) ? ' on' : '');
+}
+
+function drawViz() {
+  requestAnimationFrame(drawViz);
+  const W = vizCanvas.width, H = vizCanvas.height;
+  if (!W || !H) return;
+  vizCtx.fillStyle = 'rgba(8,8,14,0.3)';
+  vizCtx.fillRect(0, 0, W, H);
+
+  if (!analyser) { drawIdle(W, H); return; }
+
+  const bufLen = analyser.frequencyBinCount;
+  const waveData = new Uint8Array(bufLen);
+  const freqData = new Uint8Array(bufLen);
+  analyser.getByteTimeDomainData(waveData);
+  analyser.getByteFrequencyData(freqData);
+  volume = freqData.reduce((a,b) => a+b, 0) / bufLen / 255;
+
+  const barW = W / (bufLen / 4);
+  for (let i = 0; i < bufLen/4; i++) {
+    const v = freqData[i] / 255;
+    const bh = v * H * 0.6;
+    const hue = 200 + smoothX * 120 + i * 0.5;
+    vizCtx.fillStyle = `hsla(${hue},80%,${30+v*40}%,${0.3+v*0.5})`;
+    vizCtx.fillRect(i*barW, H-bh, barW-1, bh);
+  }
+
+  vizCtx.beginPath();
+  vizCtx.strokeStyle = `rgba(${Math.round(100+smoothX*155)},${Math.round(50+smoothY*100)},255,0.8)`;
+  vizCtx.lineWidth = 1.5;
+  const sliceW = W / bufLen;
+  let x = 0;
+  for (let i = 0; i < bufLen; i++) {
+    const v = waveData[i] / 128 - 1;
+    const y = (v * H * 0.25) + H/2;
+    i === 0 ? vizCtx.moveTo(x, y) : vizCtx.lineTo(x, y);
+    x += sliceW;
+  }
+  vizCtx.stroke();
+
+  if (Math.random() < volume * 0.5) {
+    particles.push({ x: Math.random()*W, y: H, vx: (Math.random()-0.5)*3,
+      vy: -(1+Math.random()*4*volume), life: 1, hue: 200+smoothX*120, size: 1+Math.random()*3 });
+  }
+  particles = particles.filter(p => p.life > 0);
+  for (const p of particles) {
+    p.x += p.vx + (smoothX-0.5)*2; p.y += p.vy; p.life -= 0.02;
+    vizCtx.beginPath(); vizCtx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+    vizCtx.fillStyle = `hsla(${p.hue},90%,70%,${p.life*0.6})`; vizCtx.fill();
+  }
+
+  const cx = W-60, cy = 60, r = 30;
+  vizCtx.strokeStyle = 'rgba(40,40,100,0.5)';
+  vizCtx.lineWidth = 0.5;
+  vizCtx.beginPath(); vizCtx.arc(cx,cy,r,0,Math.PI*2); vizCtx.stroke();
+  const dotX = cx + (smoothX*2-1)*r, dotY = cy + (smoothY*2-1)*r;
+  vizCtx.beginPath(); vizCtx.arc(dotX, dotY, 5, 0, Math.PI*2);
+  vizCtx.fillStyle = `hsla(${240+smoothX*80},90%,70%,${0.5+faceConf*0.5})`; vizCtx.fill();
+
+  vizCtx.strokeStyle = 'rgba(20,20,50,0.4)'; vizCtx.lineWidth = 0.5;
+  for (let gx = 0; gx < W; gx += 80) { vizCtx.beginPath(); vizCtx.moveTo(gx,0); vizCtx.lineTo(gx,H); vizCtx.stroke(); }
+  for (let gy = 0; gy < H; gy += 60) { vizCtx.beginPath(); vizCtx.moveTo(0,gy); vizCtx.lineTo(W,gy); vizCtx.stroke(); }
+}
+
+function drawIdle(W, H) {
+  const t = Date.now() / 1000;
+  for (let i = 0; i < 5; i++) {
+    vizCtx.beginPath();
+    vizCtx.arc(W/2+Math.sin(t*0.5+i)*100, H/2+Math.cos(t*0.3+i*1.3)*40, 2, 0, Math.PI*2);
+    vizCtx.fillStyle = 'rgba(40,40,100,0.4)'; vizCtx.fill();
+  }
+  vizCtx.fillStyle = 'rgba(40,40,120,0.3)';
+  vizCtx.font = '11px Courier New';
+  vizCtx.textAlign = 'center';
+  vizCtx.fillText('WAITING FOR SIGNAL', W/2, H/2);
+}
+
+function resizeCanvases() {
+  overlayCanvas.width = overlayCanvas.parentElement.clientWidth;
+  overlayCanvas.height = overlayCanvas.parentElement.clientHeight;
+  vizCanvas.width = vizCanvas.clientWidth;
+  vizCanvas.height = vizCanvas.clientHeight;
+}
+window.addEventListener('resize', resizeCanvases);
+drawViz();
+</script>
+</body>
+</html>
