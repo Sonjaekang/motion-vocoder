@@ -6,171 +6,80 @@
 <title>Motion Vocoder</title>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html, body {
-  width: 100%; height: 100%;
-  background: #000;
-  overflow: hidden;
-  font-family: 'Courier New', monospace;
-}
+html, body { width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
 
-/* 카메라 전체화면 */
-#cam-wrap {
-  position: relative;
-  width: 100vw;
-  height: 100vh;
-}
-#video {
-  width: 100%; height: 100%;
-  object-fit: cover;
-  transform: scaleX(-1);
-  display: block;
-}
-#hand-canvas {
-  position: absolute; top: 0; left: 0;
-  width: 100%; height: 100%;
-  transform: scaleX(-1);
-  pointer-events: none;
-}
+#cam-wrap { position: relative; width: 100vw; height: 100vh; }
+#video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); display: block; }
+#hand-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); pointer-events: none; }
 
-/* 상단 상태 */
 #header {
-  position: absolute;
-  top: 0; left: 0; right: 0;
+  position: absolute; top: 0; left: 0; right: 0;
   padding: 16px 24px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);
+  display: flex; justify-content: space-between; align-items: center;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.75), transparent);
   z-index: 10;
 }
 #logo { font-size: 11px; letter-spacing: 4px; color: #ffffff88; text-transform: uppercase; }
 #status { font-size: 10px; letter-spacing: 2px; color: #ffffff44; }
 #status.active { color: #44ffaa; }
 
-/* 하단 이펙트 패널 */
 #fx-panel {
-  position: absolute;
-  bottom: 0; left: 0; right: 0;
+  position: absolute; bottom: 0; left: 0; right: 0;
   padding: 20px 32px 28px;
-  background: linear-gradient(to top, rgba(0,0,0,0.85) 70%, transparent);
+  background: linear-gradient(to top, rgba(0,0,0,0.88) 70%, transparent);
   z-index: 10;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
 }
 
 .fx-block { display: flex; flex-direction: column; gap: 8px; }
-
-.fx-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-}
-.fx-name {
-  font-size: 10px;
-  letter-spacing: 3px;
-  color: #ffffff66;
-  text-transform: uppercase;
-}
-.fx-hand {
-  font-size: 9px;
-  letter-spacing: 1px;
-  color: #ffffff33;
-}
-.fx-pct {
-  font-size: 22px;
-  font-weight: bold;
-  letter-spacing: 1px;
-  font-variant-numeric: tabular-nums;
-  transition: color 0.1s;
-}
-.pct-l { color: #8844ff; }
+.fx-header { display: flex; justify-content: space-between; align-items: baseline; }
+.fx-name { font-size: 10px; letter-spacing: 3px; color: #ffffff66; text-transform: uppercase; }
+.fx-hand { font-size: 9px; letter-spacing: 1px; color: #ffffff33; }
+.fx-pct { font-size: 22px; font-weight: bold; letter-spacing: 1px; font-variant-numeric: tabular-nums; transition: color 0.2s; }
+.pct-l { color: #4488ff; }
+.pct-l.on { color: #88ccff; }
 .pct-r { color: #ff4488; }
 
-.fx-track {
-  height: 3px;
-  background: rgba(255,255,255,0.08);
-  border-radius: 2px;
-  overflow: hidden;
-}
-.fx-fill {
-  height: 100%;
-  border-radius: 2px;
-  width: 0%;
-  transition: width 0.05s;
-}
-.fill-l { background: linear-gradient(90deg, #4422cc, #aa44ff); }
+.fx-track { height: 3px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; }
+.fx-fill { height: 100%; border-radius: 2px; width: 0%; transition: width 0.08s; }
+.fill-l { background: linear-gradient(90deg, #2255cc, #44aaff); }
 .fill-r { background: linear-gradient(90deg, #cc2266, #ff66aa); }
 
-/* 핀치 거리 표시 */
-.pinch-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.pinch-dot {
-  width: 7px; height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  transition: opacity 0.2s;
-}
-.dot-l { background: #8844ff; }
-.dot-r { background: #ff4488; }
-.pinch-bar-wrap {
-  flex: 1;
-  height: 2px;
-  background: rgba(255,255,255,0.06);
-  border-radius: 1px;
-  overflow: hidden;
-}
-.pinch-bar-fill {
-  height: 100%;
-  border-radius: 1px;
-  transition: width 0.05s;
-  width: 0%;
-}
-.pbar-l { background: #8844ff88; }
-.pbar-r { background: #ff448888; }
-.pinch-hint {
-  font-size: 8px;
-  letter-spacing: 1px;
-  color: #ffffff22;
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-  width: 28px;
-  text-align: right;
-}
+.fx-state { font-size: 9px; letter-spacing: 2px; color: #ffffff22; text-transform: uppercase; }
+.fx-state.on { color: #88ccff; }
+.fx-state.off { color: #ff446688; }
 
-/* 오버레이 시작화면 */
+.pinch-line { display: flex; align-items: center; gap: 8px; }
+.pinch-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; transition: opacity 0.2s; }
+.dot-l { background: #4488ff; }
+.dot-r { background: #ff4488; }
+.pinch-bar-wrap { flex: 1; height: 2px; background: rgba(255,255,255,0.06); border-radius: 1px; overflow: hidden; }
+.pinch-bar-fill { height: 100%; border-radius: 1px; transition: width 0.05s; width: 0%; }
+.pbar-l { background: #4488ff66; }
+.pbar-r { background: #ff448866; }
+.pinch-hint { font-size: 8px; letter-spacing: 1px; color: #ffffff22; flex-shrink: 0; width: 36px; text-align: right; font-variant-numeric: tabular-nums; }
+
 #overlay {
   position: absolute; inset: 0;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 16px;
-  background: rgba(0,0,0,0.88);
-  z-index: 30;
+  background: rgba(0,0,0,0.88); z-index: 30;
 }
 #overlay p { font-size: 10px; color: #ffffff44; letter-spacing: 2px; }
 #overlay p.sub { color: #ffffff22; font-size: 9px; }
 #activate-btn {
-  padding: 12px 36px;
-  background: transparent;
-  color: #aaaaff;
-  font-family: 'Courier New', monospace;
-  font-size: 11px;
-  letter-spacing: 4px;
-  text-transform: uppercase;
-  border: 1px solid #4444ff88;
-  cursor: pointer;
-  border-radius: 2px;
+  padding: 12px 36px; background: transparent; color: #aaaaff;
+  font-family: 'Courier New', monospace; font-size: 11px; letter-spacing: 4px;
+  text-transform: uppercase; border: 1px solid #4444ff88; cursor: pointer; border-radius: 2px;
   transition: background 0.2s, border-color 0.2s;
 }
 #activate-btn:hover { background: #2222cc22; border-color: #6666ff; }
 </style>
 </head>
 <body>
-
 <div id="cam-wrap">
   <video id="video" autoplay muted playsinline></video>
   <canvas id="hand-canvas"></canvas>
@@ -181,14 +90,14 @@ html, body {
   </div>
 
   <div id="fx-panel">
-    <!-- 왼손: 오토튠 -->
     <div class="fx-block">
       <div class="fx-header">
-        <div class="fx-name">Auto-Tune</div>
-        <div class="fx-hand">왼손 핀치</div>
+        <div class="fx-name">Harmony (4th)</div>
+        <div class="fx-hand">왼손 제스처</div>
       </div>
-      <div class="fx-pct pct-l" id="autotune-pct">0%</div>
-      <div class="fx-track"><div class="fx-fill fill-l" id="autotune-fill"></div></div>
+      <div class="fx-pct pct-l" id="harmony-pct">OFF</div>
+      <div class="fx-track"><div class="fx-fill fill-l" id="harmony-fill"></div></div>
+      <div class="fx-state off" id="harmony-state">주먹 → OFF &nbsp;·&nbsp; 손 펼치기 → ON</div>
       <div class="pinch-line">
         <div class="pinch-dot dot-l" id="left-dot"></div>
         <div class="pinch-bar-wrap"><div class="pinch-bar-fill pbar-l" id="left-pbar"></div></div>
@@ -196,7 +105,6 @@ html, body {
       </div>
     </div>
 
-    <!-- 오른손: 에코 -->
     <div class="fx-block">
       <div class="fx-header">
         <div class="fx-name">Echo</div>
@@ -204,6 +112,7 @@ html, body {
       </div>
       <div class="fx-pct pct-r" id="echo-pct">0%</div>
       <div class="fx-track"><div class="fx-fill fill-r" id="echo-fill"></div></div>
+      <div class="fx-state" id="echo-state">벌릴수록 에코 증가</div>
       <div class="pinch-line">
         <div class="pinch-dot dot-r" id="right-dot"></div>
         <div class="pinch-bar-wrap"><div class="pinch-bar-fill pbar-r" id="right-pbar"></div></div>
@@ -215,21 +124,31 @@ html, body {
   <div id="overlay">
     <p>카메라 + 마이크 권한이 필요합니다</p>
     <button id="activate-btn" onclick="initAll()">ACTIVATE</button>
-    <p class="sub">왼손 핀치 → 오토튠 &nbsp;·&nbsp; 오른손 핀치 → 에코</p>
+    <p class="sub">왼손 펼치기 → 4도 화음 &nbsp;·&nbsp; 오른손 핀치 → 에코</p>
   </div>
 </div>
 
 <script>
-let audioCtx;
-let autotuneVal = 0, echoVal = 0;
-let leftPinch = 0, rightPinch = 0;
+let harmonyOn = false;
+let echoVal = 0, rightPinch = 0;
 
-// 오토튠용 노드들
-let pitchShiftGain, dryAutoGain;
-// 에코용 노드들
-let delayNode, delayFeedback, echoWetGain, echoWetGain2, echoDryGain;
+// Tone.js 노드들
+let mic, pitchShift, harmonyWet, harmonyDry, harmonyCrossfade;
+let feedbackDelay, echoWetGain;
+let toneReady = false;
 
 function lerp(a, b, t) { return a + (b - a) * t; }
+
+function isHandOpen(lm) {
+  // 손가락 끝이 PIP 관절보다 위에 있으면 펼쳐진 것
+  const fingers = [
+    lm[8].y  < lm[6].y,   // 검지
+    lm[12].y < lm[10].y,  // 중지
+    lm[16].y < lm[14].y,  // 약지
+    lm[20].y < lm[18].y,  // 소지
+  ];
+  return fingers.filter(Boolean).length >= 3;
+}
 
 function pinchDist(lm) {
   const dx = lm[4].x - lm[8].x;
@@ -242,96 +161,65 @@ async function initAll() {
   document.getElementById('status').textContent = '● INIT...';
 
   try {
+    // Tone.js 컨텍스트 시작
+    await Tone.start();
+    await Tone.context.resume();
+
+    // 마이크 스트림 (카메라 포함)
     const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     document.getElementById('video').srcObject = stream;
 
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const mic = audioCtx.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
+    // Tone.js UserMedia (마이크)
+    mic = new Tone.UserMedia();
+    await mic.open();
 
-    // ── 오토튠 체인 ──────────────────────────────
-    // 실제 피치 시프트는 Web Audio만으로 완벽 구현이 어려워
-    // 링 모듈레이터 + 필터로 보코더스러운 오토튠 느낌을 냄
-    const osc = audioCtx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.value = 0; // 초기값
+    // ── 화음 체인 (Tone.PitchShift) ────────────────────────
+    // PitchShift는 위상 보코더(Phase Vocoder) 기반 — 품질이 훨씬 좋음
+    // 완전 4도 위 = +5 semitones
+    pitchShift = new Tone.PitchShift({
+      pitch: 5,          // 완전 4도 위
+      windowSize: 0.1,   // 짧을수록 반응 빠름, 길수록 품질 좋음
+      delayTime: 0,
+      feedback: 0,
+      wet: 1,
+    });
 
-    const ringMod = audioCtx.createGain();
-    ringMod.gain.value = 0;   // 오실레이터로 AM 변조
+    // 화음 dry/wet 크로스페이드
+    // mic → pitchShift → harmonyWetGain  ┐
+    // mic → harmonyDryGain               ┘ → feedbackDelay → out
+    harmonyWet = new Tone.Gain(0);   // 시작은 꺼짐
+    harmonyDry = new Tone.Gain(1);
 
-    // 피치 필터 체인 (formant 느낌)
-    const formant1 = audioCtx.createBiquadFilter();
-    formant1.type = 'peaking';
-    formant1.frequency.value = 800;
-    formant1.Q.value = 8;
-    formant1.gain.value = 0;
+    mic.connect(pitchShift);
+    pitchShift.connect(harmonyWet);
+    mic.connect(harmonyDry);
 
-    const formant2 = audioCtx.createBiquadFilter();
-    formant2.type = 'peaking';
-    formant2.frequency.value = 1200;
-    formant2.Q.value = 6;
-    formant2.gain.value = 0;
+    // ── 에코 체인 (Tone.FeedbackDelay) ─────────────────────
+    // FeedbackDelay = 딜레이 + 피드백 루프, 훨씬 깔끔한 에코
+    feedbackDelay = new Tone.FeedbackDelay({
+      delayTime: "8n",     // 8분음표 길이 (약 0.25초)
+      feedback: 0.3,
+      wet: 0,              // 시작은 꺼짐
+    });
 
-    const formant3 = audioCtx.createBiquadFilter();
-    formant3.type = 'highshelf';
-    formant3.frequency.value = 3000;
-    formant3.gain.value = 0;
+    // 부드러운 톤 보정용 EQ (화음이 너무 날카롭지 않게)
+    const eq = new Tone.EQ3({
+      low: 2,
+      mid: 0,
+      high: -3,
+    });
 
-    // 오토튠 dry/wet
-    dryAutoGain = audioCtx.createGain();
-    dryAutoGain.gain.value = 1;
-    pitchShiftGain = audioCtx.createGain();
-    pitchShiftGain.gain.value = 0;
+    // 마스터 리미터 (클리핑 방지)
+    const limiter = new Tone.Limiter(-3);
 
-    osc.connect(ringMod.gain); // AM 변조
-    mic.connect(ringMod);
-    mic.connect(formant1);
-    formant1.connect(formant2);
-    formant2.connect(formant3);
+    // 체인 연결
+    harmonyDry.connect(feedbackDelay);
+    harmonyWet.connect(feedbackDelay);
+    feedbackDelay.connect(eq);
+    eq.connect(limiter);
+    limiter.toDestination();
 
-    mic.connect(dryAutoGain);
-    formant3.connect(pitchShiftGain);
-    ringMod.connect(pitchShiftGain);
-
-    osc.start();
-
-    // ── 에코 체인 ────────────────────────────────
-    delayNode = audioCtx.createDelay(3.0);
-    delayNode.delayTime.value = 0.35;
-
-    delayFeedback = audioCtx.createGain();
-    delayFeedback.gain.value = 0.45;
-
-    echoWetGain = audioCtx.createGain();
-    echoWetGain.gain.value = 0;
-    echoDryGain = audioCtx.createGain();
-    echoDryGain.gain.value = 1;
-
-    // 에코 루프
-    delayNode.connect(delayFeedback);
-    delayFeedback.connect(delayNode);
-    delayNode.connect(echoWetGain);
-
-    // ── 마스터 출력 ──────────────────────────────
-    const master = audioCtx.createGain();
-    master.gain.value = 1.0;
-
-    // dry 신호 → 오토튠 → 에코
-    dryAutoGain.connect(echoDryGain);
-    pitchShiftGain.connect(echoDryGain);
-
-    echoDryGain.connect(delayNode);
-    echoDryGain.connect(master);
-    echoWetGain.connect(master);
-
-    master.connect(audioCtx.destination);
-
-    // 필터 참조 저장
-    window._formant1 = formant1;
-    window._formant2 = formant2;
-    window._formant3 = formant3;
-    window._osc = osc;
-    window._ringMod = ringMod;
-
+    toneReady = true;
     document.getElementById('status').textContent = '● ACTIVE';
     document.getElementById('status').className = 'active';
 
@@ -340,47 +228,34 @@ async function initAll() {
   } catch(e) {
     document.getElementById('overlay').style.display = 'flex';
     document.getElementById('status').textContent = '● ERROR';
+    console.error(e);
     alert('오류: ' + e.message);
   }
 }
 
-function applyAutotune(amount) {
-  if (!audioCtx) return;
-  const t = audioCtx.currentTime;
-
-  // amount 0~1
-  // 0: 원음 그대로
-  // 1: 강한 포먼트 부스트 + 링 변조로 로봇 목소리
-  const gain = amount;
-  const fGain = amount * 18;
-
-  dryAutoGain.gain.setTargetAtTime(1 - amount * 0.3, t, 0.05);
-  pitchShiftGain.gain.setTargetAtTime(amount * 0.7, t, 0.05);
-
-  window._formant1.gain.setTargetAtTime(fGain, t, 0.05);
-  window._formant2.gain.setTargetAtTime(fGain * 0.8, t, 0.05);
-  window._formant3.gain.setTargetAtTime(fGain * 0.5, t, 0.05);
-
-  // 링 모듈레이터: 약한 AM 변조로 메탈릭 느낌
-  window._osc.frequency.setTargetAtTime(80 + amount * 320, t, 0.05);
-  window._ringMod.gain.setTargetAtTime(amount * 0.25, t, 0.05);
+function applyHarmony(isOpen) {
+  if (!toneReady) return;
+  const now = Tone.now();
+  if (isOpen) {
+    harmonyWet.gain.rampTo(0.75, 0.15);  // 서서히 켜짐
+  } else {
+    harmonyWet.gain.rampTo(0, 0.15);     // 서서히 꺼짐
+  }
 }
 
 function applyEcho(amount) {
-  if (!audioCtx) return;
-  const t = audioCtx.currentTime;
-
-  echoWetGain.gain.setTargetAtTime(amount * 0.85, t, 0.05);
-  echoDryGain.gain.setTargetAtTime(1, t, 0.05);
-  // 핀치 강도에 따라 딜레이 타임도 살짝 변화
-  delayNode.delayTime.setTargetAtTime(0.2 + amount * 0.4, t, 0.1);
-  delayFeedback.gain.setTargetAtTime(0.3 + amount * 0.35, t, 0.1);
+  if (!toneReady) return;
+  // amount 0~1 → wet 0~0.28 (기존 30% 수준이 100%)
+  const wet = amount * 0.28;
+  const fb  = 0.25 + amount * 0.2;
+  feedbackDelay.wet.rampTo(wet, 0.08);
+  feedbackDelay.feedback.rampTo(fb, 0.08);
 }
 
 function initHands() {
-  const video = document.getElementById('video');
+  const video  = document.getElementById('video');
   const canvas = document.getElementById('hand-canvas');
-  const ctx = canvas.getContext('2d');
+  const ctx    = canvas.getContext('2d');
 
   const hands = new Hands({
     locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
@@ -389,67 +264,73 @@ function initHands() {
     maxNumHands: 2,
     modelComplexity: 1,
     minDetectionConfidence: 0.75,
-    minTrackingConfidence: 0.6
+    minTrackingConfidence: 0.6,
   });
 
   hands.onResults(results => {
-    canvas.width = video.videoWidth || 640;
+    canvas.width  = video.videoWidth  || 640;
     canvas.height = video.videoHeight || 480;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    let leftFound = false, rightFound = false;
+    let leftFound = false, rightFound = false, leftOpen = false;
 
     if (results.multiHandLandmarks) {
       results.multiHandLandmarks.forEach((lm, i) => {
-        const label = results.multiHandedness[i].label;
+        const label  = results.multiHandedness[i].label;
         const isLeft = (label === 'Right'); // 거울 반전 보정
-
-        const raw = pinchDist(lm);
-        // 0.02(붙음) ~ 0.22(벌림) → 0~1
-        const norm = Math.min(1, Math.max(0, (raw - 0.02) / 0.20));
-
-        const color = isLeft ? '#9966ff' : '#ff6699';
-        drawHand(ctx, lm, canvas.width, canvas.height, color);
-        drawPinchLine(ctx, lm, canvas.width, canvas.height, color, norm);
 
         if (isLeft) {
           leftFound = true;
-          leftPinch = lerp(leftPinch, norm, 0.15);
-          autotuneVal = leftPinch;
+          leftOpen  = isHandOpen(lm);
+          const color = leftOpen ? '#44aaff' : '#2244aa';
+          drawHand(ctx, lm, canvas.width, canvas.height, color);
+
+          // 손 위 레이블
+          const cx = lm[9].x * canvas.width;
+          const cy = lm[9].y * canvas.height - 32;
+          ctx.fillStyle = color + 'dd';
+          ctx.font = 'bold 13px Courier New';
+          ctx.textAlign = 'center';
+          ctx.fillText(leftOpen ? '♪ HARMONY ON' : '✕ HARMONY OFF', cx, cy);
+
         } else {
           rightFound = true;
+          const raw  = pinchDist(lm);
+          const norm = Math.min(1, Math.max(0, (raw - 0.02) / 0.20));
           rightPinch = lerp(rightPinch, norm, 0.15);
-          echoVal = rightPinch;
+          echoVal    = rightPinch;
+          drawHand(ctx, lm, canvas.width, canvas.height, '#ff6699');
+          drawPinchLine(ctx, lm, canvas.width, canvas.height, '#ff6699', norm);
         }
       });
     }
 
-    if (!leftFound)  { leftPinch  = lerp(leftPinch,  0, 0.04); autotuneVal = leftPinch; }
-    if (!rightFound) { rightPinch = lerp(rightPinch, 0, 0.04); echoVal     = rightPinch; }
+    if (!rightFound) {
+      rightPinch = lerp(rightPinch, 0, 0.04);
+      echoVal    = rightPinch;
+    }
 
-    applyAutotune(autotuneVal);
+    harmonyOn = leftFound ? leftOpen : harmonyOn;
+    applyHarmony(harmonyOn);
     applyEcho(echoVal);
-    updateUI(leftFound, rightFound);
+    updateUI(leftFound, rightFound, leftOpen);
   });
 
   const camera = new Camera(video, {
     onFrame: async () => { await hands.send({ image: video }); },
-    width: 640, height: 480
+    width: 640, height: 480,
   });
   camera.start();
 }
 
 function drawHand(ctx, lm, w, h, color) {
   const conn = [
-    [0,1],[1,2],[2,3],[3,4],
-    [0,5],[5,6],[6,7],[7,8],
-    [0,9],[9,10],[10,11],[11,12],
-    [0,13],[13,14],[14,15],[15,16],
-    [0,17],[17,18],[18,19],[19,20],
-    [5,9],[9,13],[13,17]
+    [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],
+    [0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],
+    [0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17],
   ];
-  ctx.strokeStyle = color + '44';
-  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = color + '55';
+  ctx.lineWidth   = 1.2;
   conn.forEach(([a, b]) => {
     ctx.beginPath();
     ctx.moveTo(lm[a].x * w, lm[a].y * h);
@@ -459,7 +340,7 @@ function drawHand(ctx, lm, w, h, color) {
   lm.forEach((p, i) => {
     ctx.beginPath();
     ctx.arc(p.x * w, p.y * h, i === 0 ? 5 : 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = color + (i === 0 ? 'cc' : '66');
+    ctx.fillStyle = color + (i === 0 ? 'cc' : '77');
     ctx.fill();
   });
 }
@@ -468,48 +349,56 @@ function drawPinchLine(ctx, lm, w, h, color, norm) {
   const ax = lm[4].x * w, ay = lm[4].y * h;
   const bx = lm[8].x * w, by = lm[8].y * h;
 
-  // 두 손가락 사이 점선
-  ctx.beginPath();
-  ctx.moveTo(ax, ay);
-  ctx.lineTo(bx, by);
-  ctx.strokeStyle = color + 'bb';
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([4, 4]);
-  ctx.stroke();
-  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+  ctx.strokeStyle = color + 'bb'; ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]);
 
-  // 엄지, 검지 강조 원
-  [ax, bx].forEach((x, i) => {
-    const y = i === 0 ? ay : by;
-    ctx.beginPath();
-    ctx.arc(x, y, 8, 0, Math.PI * 2);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.stroke();
+  [{ x: ax, y: ay }, { x: bx, y: by }].forEach(p => {
+    ctx.beginPath(); ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
   });
 
-  // 중앙에 강도 표시
-  const mx = (ax + bx) / 2, my = (ay + by) / 2;
   ctx.fillStyle = color + 'cc';
   ctx.font = 'bold 12px Courier New';
   ctx.textAlign = 'center';
-  ctx.fillText(Math.round(norm * 100) + '%', mx, my - 10);
+  ctx.fillText(Math.round(norm * 100) + '%', (ax + bx) / 2, (ay + by) / 2 - 10);
 }
 
-function updateUI(leftFound, rightFound) {
-  const ap = Math.round(autotuneVal * 100);
+function updateUI(leftFound, rightFound, leftOpen) {
   const ep = Math.round(echoVal * 100);
 
-  document.getElementById('autotune-pct').textContent = ap + '%';
-  document.getElementById('autotune-fill').style.width = ap + '%';
-  document.getElementById('left-pbar').style.width = ap + '%';
-  document.getElementById('left-hint').textContent = leftFound ? ap + '%' : '–';
-  document.getElementById('left-dot').style.opacity = leftFound ? '1' : '0.2';
+  const hPct   = document.getElementById('harmony-pct');
+  const hFill  = document.getElementById('harmony-fill');
+  const hState = document.getElementById('harmony-state');
 
-  document.getElementById('echo-pct').textContent = ep + '%';
-  document.getElementById('echo-fill').style.width = ep + '%';
-  document.getElementById('right-pbar').style.width = ep + '%';
-  document.getElementById('right-hint').textContent = rightFound ? ep + '%' : '–';
+  if (!leftFound) {
+    hPct.textContent = '–';
+    hPct.className   = 'fx-pct pct-l';
+    hFill.style.width = '0%';
+    hState.textContent = '손을 카메라에 보여주세요';
+    hState.className   = 'fx-state';
+  } else if (leftOpen) {
+    hPct.textContent  = 'ON';
+    hPct.className    = 'fx-pct pct-l on';
+    hFill.style.width = '100%';
+    hState.textContent = '♪ 4도 화음 적용 중';
+    hState.className   = 'fx-state on';
+  } else {
+    hPct.textContent  = 'OFF';
+    hPct.className    = 'fx-pct pct-l';
+    hFill.style.width = '0%';
+    hState.textContent = '✕ 주먹 → 화음 꺼짐';
+    hState.className   = 'fx-state off';
+  }
+
+  document.getElementById('left-pbar').style.width  = leftOpen ? '100%' : '0%';
+  document.getElementById('left-hint').textContent   = leftFound ? (leftOpen ? 'OPEN' : 'FIST') : '–';
+  document.getElementById('left-dot').style.opacity  = leftFound ? '1' : '0.2';
+
+  document.getElementById('echo-pct').textContent    = ep + '%';
+  document.getElementById('echo-fill').style.width   = ep + '%';
+  document.getElementById('right-pbar').style.width  = ep + '%';
+  document.getElementById('right-hint').textContent  = rightFound ? ep + '%' : '–';
   document.getElementById('right-dot').style.opacity = rightFound ? '1' : '0.2';
 }
 </script>
